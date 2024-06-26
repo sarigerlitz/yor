@@ -725,45 +725,38 @@ func (p *TerraformParser) getHclMapsContents(tokens hclwrite.Tokens) []hclwrite.
 func (p *TerraformParser) extractTagPairs(tokens hclwrite.Tokens) []hclwrite.Tokens {
 	// The function gets tokens and returns an array of tokens that represent key and value
 	// example: tokens: "a=1\n b=2, c=3", returns: ["a=1", "b=2", "c=3"]
-	separatorTokens := []hclsyntax.TokenType{hclsyntax.TokenComma, hclsyntax.TokenNewline, hclsyntax.TokenComment}
+	separatorTokens := []hclsyntax.TokenType{hclsyntax.TokenComma, hclsyntax.TokenNewline}
 
 	bracketsCounters := map[hclsyntax.TokenType]int{
 		hclsyntax.TokenOParen: 0,
 		hclsyntax.TokenOBrack: 0,
 	}
 
-	openingBrackets := []hclsyntax.TokenType{hclsyntax.TokenOParen, hclsyntax.TokenOBrack}
-	closingBrackets := []hclsyntax.TokenType{hclsyntax.TokenCParen, hclsyntax.TokenCBrack}
-
-	bracketsPairs := map[hclsyntax.TokenType]hclsyntax.TokenType{
-		hclsyntax.TokenCParen: hclsyntax.TokenOParen,
-		hclsyntax.TokenCBrack: hclsyntax.TokenOBrack,
-	}
-
 	tagPairs := make([]hclwrite.Tokens, 0)
 	startIndex := 0
 	hasEq := false
+	inForLoop := false
+
 	for i, token := range tokens {
-		if utils.InSlice(separatorTokens, token.Type) && getUncloseBracketsCount(bracketsCounters) == 0 {
-			if hasEq {
-				endIndex := i
-				if token.Type == hclsyntax.TokenComment {
-					endIndex = i + 1
+		if token.Type == hclsyntax.TokenFor {
+			inForLoop = true
+		}
+
+		if inForLoop {
+			if utils.InSlice(separatorTokens, token.Type) && getUnclosedBracketsCount(bracketsCounters) == 0 {
+				if hasEq {
+					endIndex := i
+					tagPairs = append(tagPairs, tokens[startIndex:endIndex])
 				}
-				tagPairs = append(tagPairs, tokens[startIndex:endIndex])
+				startIndex = i + 1
+				hasEq = false
 			}
-			startIndex = i + 1
-			hasEq = false
-		}
-		if token.Type == hclsyntax.TokenEqual {
-			hasEq = true
-		}
-		if utils.InSlice(openingBrackets, token.Type) {
-			bracketsCounters[token.Type]++
-		}
-		if utils.InSlice(closingBrackets, token.Type) {
-			matchingOpen := bracketsPairs[token.Type]
-			bracketsCounters[matchingOpen]--
+			if token.Type == hclsyntax.TokenEqual {
+				hasEq = true
+			}
+			if token.Type == hclsyntax.TokenEndfor {
+				inForLoop = false
+			}
 		}
 	}
 	if hasEq {
